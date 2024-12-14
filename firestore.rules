@@ -1,0 +1,58 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    // Leads collection rules
+    match /leads/{leadId} {
+      // Anyone can read basic lead info
+      allow read: if true;
+      
+      // Only authenticated users can create leads
+      allow create: if isAuthenticated();
+      
+      // Only the lead owner or admin can update/delete
+      allow update, delete: if isOwner(resource.data.userId) || 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+        
+      // Purchased leads subcollection
+      match /purchases/{purchaseId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() && 
+          !exists(/databases/$(database)/documents/leads/$(leadId)/purchases/$(request.auth.uid));
+        allow update, delete: if isOwner(request.auth.uid);
+      }
+    }
+    
+    // Users collection rules
+    match /users/{userId} {
+      // Users can read their own profile
+      allow read: if isOwner(userId);
+      
+      // Only authenticated users can create their profile
+      allow create: if isAuthenticated() && isOwner(userId);
+      
+      // Users can update their own profile
+      allow update: if isOwner(userId);
+      
+      // Only admins can delete user profiles
+      allow delete: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    // Payments collection rules
+    match /payments/{paymentId} {
+      // Users can read their own payments
+      allow read: if isOwner(resource.data.userId);
+      
+      // Only the system can create/update payments
+      allow create, update: if false;
+    }
+  }
+}
